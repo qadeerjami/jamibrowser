@@ -4,6 +4,11 @@ const app = express();
 const PORT = 4000;
 const { Pool } = require('pg');
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
 app.use(cors());
 app.use(express.json());
 
