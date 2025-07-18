@@ -1,140 +1,135 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const app = express();
 const PORT = 4000;
-const fetch = require('node-fetch');
-const { ProxyAgent } = require('proxy-agent');
-const axios = require('axios');
-const { SocksProxyAgent } = require('socks-proxy-agent');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { HttpProxyAgent } = require('http-proxy-agent');
 const { Pool } = require('pg');
 
 app.use(cors());
 app.use(express.json());
 
-// SQLite DB setup
-const db = new sqlite3.Database('./proxies.db', (err) => {
-  if (err) return console.error('DB open error:', err.message);
-  console.log('Connected to SQLite database.');
-});
+// --- PROFILE TABLE SETUP ---
+// REMOVE: const db = new sqlite3.Database('./proxies.db', (err) => {
+// REMOVE: if (err) return console.error('DB open error:', err.message);
+// REMOVE: console.log('Connected to SQLite database.');
+// REMOVE: db.run(`CREATE TABLE IF NOT EXISTS proxies (
+// REMOVE:   id INTEGER PRIMARY KEY AUTOINCREMENT,
+// REMOVE:   type TEXT,
+// REMOVE:   tag TEXT,
+// REMOVE:   hostPort TEXT,
+// REMOVE:   ip TEXT,
+// REMOVE:   location TEXT,
+// REMOVE:   profiles INTEGER,
+// REMOVE:   binding TEXT,
+// REMOVE:   notes TEXT
+// REMOVE: )`);
 
-db.run(`CREATE TABLE IF NOT EXISTS proxies (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  type TEXT,
-  tag TEXT,
-  hostPort TEXT,
-  ip TEXT,
-  location TEXT,
-  profiles INTEGER,
-  binding TEXT,
-  notes TEXT
-)`);
+// REMOVE: // Get all proxies
+// REMOVE: app.get('/api/proxies', (req, res) => {
+// REMOVE:   db.all('SELECT * FROM proxies', [], (err, rows) => {
+// REMOVE:     if (err) return res.status(500).json({ error: err.message });
+// REMOVE:     res.json(rows);
+// REMOVE:   });
+// REMOVE: });
 
-// Get all proxies
-app.get('/api/proxies', (req, res) => {
-  db.all('SELECT * FROM proxies', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
-});
+// REMOVE: // Add a proxy
+// REMOVE: app.post('/api/proxies', (req, res) => {
+// REMOVE:   const { type, tag, hostPort, ip, location, profiles, binding, notes } = req.body;
+// REMOVE:   db.run(
+// REMOVE:     'INSERT INTO proxies (type, tag, hostPort, ip, location, profiles, binding, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+// REMOVE:     [type, tag, hostPort, ip, location, profiles, binding, notes],
+// REMOVE:     function (err) {
+// REMOVE:       if (err) return res.status(500).json({ error: err.message });
+// REMOVE:       res.json({ id: this.lastID });
+// REMOVE:     }
+// REMOVE:   );
+// REMOVE: });
 
-// Add a proxy
-app.post('/api/proxies', (req, res) => {
-  const { type, tag, hostPort, ip, location, profiles, binding, notes } = req.body;
-  db.run(
-    'INSERT INTO proxies (type, tag, hostPort, ip, location, profiles, binding, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [type, tag, hostPort, ip, location, profiles, binding, notes],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
-});
+// REMOVE: // Update a proxy
+// REMOVE: app.put('/api/proxies/:id', (req, res) => {
+// REMOVE:   const { type, tag, hostPort, ip, location, profiles, binding, notes } = req.body;
+// REMOVE:   db.run(
+// REMOVE:     'UPDATE proxies SET type=?, tag=?, hostPort=?, ip=?, location=?, profiles=?, binding=?, notes=? WHERE id=?',
+// REMOVE:     [type, tag, hostPort, ip, location, profiles, binding, notes, req.params.id],
+// REMOVE:     function (err) {
+// REMOVE:       if (err) return res.status(500).json({ error: err.message });
+// REMOVE:       res.json({ changes: this.changes });
+// REMOVE:     }
+// REMOVE:   );
+// REMOVE: });
 
-// Update a proxy
-app.put('/api/proxies/:id', (req, res) => {
-  const { type, tag, hostPort, ip, location, profiles, binding, notes } = req.body;
-  db.run(
-    'UPDATE proxies SET type=?, tag=?, hostPort=?, ip=?, location=?, profiles=?, binding=?, notes=? WHERE id=?',
-    [type, tag, hostPort, ip, location, profiles, binding, notes, req.params.id],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ changes: this.changes });
-    }
-  );
-});
+// REMOVE: // Delete a proxy
+// REMOVE: app.delete('/api/proxies/:id', (req, res) => {
+// REMOVE:   db.run('DELETE FROM proxies WHERE id=?', [req.params.id], function (err) {
+// REMOVE:     if (err) return res.status(500).json({ error: err.message });
+// REMOVE:     res.json({ changes: this.changes });
+// REMOVE:   });
+// REMOVE: });
 
-// Delete a proxy
-app.delete('/api/proxies/:id', (req, res) => {
-  db.run('DELETE FROM proxies WHERE id=?', [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ changes: this.changes });
-  });
-});
+// REMOVE: // Batch delete used proxies (profiles > 0)
+// REMOVE: app.delete('/api/proxies', (req, res) => {
+// REMOVE:   db.run('DELETE FROM proxies WHERE profiles > 0', function (err) {
+// REMOVE:     if (err) return res.status(500).json({ error: err.message });
+// REMOVE:     res.json({ changes: this.changes });
+// REMOVE:   });
+// REMOVE: });
 
-// Batch delete used proxies (profiles > 0)
-app.delete('/api/proxies', (req, res) => {
-  db.run('DELETE FROM proxies WHERE profiles > 0', function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ changes: this.changes });
-  });
-});
-
-// Test a proxy connection
-app.post('/api/proxies/test', async (req, res) => {
-  const { type, hostPort, account, password } = req.body;
-  let proxyUrl = '';
-  if (type && hostPort) {
-    let auth = account && password ? `${encodeURIComponent(account)}:${encodeURIComponent(password)}@` : '';
-    proxyUrl = `${type}://${auth}${hostPort}`;
-  } else {
-    return res.status(400).json({ success: false, error: 'Missing type or hostPort' });
-  }
-  try {
-    let agent;
-    if (type.startsWith('socks')) {
-      agent = new SocksProxyAgent(proxyUrl);
-    } else if (type === 'http') {
-      agent = new HttpProxyAgent(proxyUrl);
-    } else if (type === 'https') {
-      agent = new HttpsProxyAgent(proxyUrl);
-    } else {
-      return res.status(400).json({ success: false, error: 'Unsupported proxy type' });
-    }
-    const response = await axios.get('http://ip-api.com/json', { httpAgent: agent, httpsAgent: agent, timeout: 7000 });
-    const data = response.data;
-    if (data && data.query) {
-      res.json({
-        success: true,
-        ip: data.query,
-        country: data.country,
-        state: data.regionName,
-        city: data.city,
-        data
-      });
-    } else {
-      res.json({ success: false, error: 'No IP info returned', data });
-    }
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
+// REMOVE: // Test a proxy connection
+// REMOVE: app.post('/api/proxies/test', async (req, res) => {
+// REMOVE:   const { type, hostPort, account, password } = req.body;
+// REMOVE:   let proxyUrl = '';
+// REMOVE:   if (type && hostPort) {
+// REMOVE:     let auth = account && password ? `${encodeURIComponent(account)}:${encodeURIComponent(password)}@` : '';
+// REMOVE:     proxyUrl = `${type}://${auth}${hostPort}`;
+// REMOVE:   } else {
+// REMOVE:     return res.status(400).json({ success: false, error: 'Missing type or hostPort' });
+// REMOVE:   }
+// REMOVE:   try {
+// REMOVE:     let agent;
+// REMOVE:     if (type.startsWith('socks')) {
+// REMOVE:       agent = new SocksProxyAgent(proxyUrl);
+// REMOVE:     } else if (type === 'http') {
+// REMOVE:       agent = new HttpProxyAgent(proxyUrl);
+// REMOVE:     } else if (type === 'https') {
+// REMOVE:       agent = new HttpsProxyAgent(proxyUrl);
+// REMOVE:     } else {
+// REMOVE:       return res.status(400).json({ success: false, error: 'Unsupported proxy type' });
+// REMOVE:     }
+// REMOVE:     const response = await axios.get('http://ip-api.com/json', { httpAgent: agent, httpsAgent: agent, timeout: 7000 });
+// REMOVE:     const data = response.data;
+// REMOVE:     if (data && data.query) {
+// REMOVE:       res.json({
+// REMOVE:         success: true,
+// REMOVE:         ip: data.query,
+// REMOVE:         country: data.country,
+// REMOVE:         state: data.regionName,
+// REMOVE:         city: data.city,
+// REMOVE:         data
+// REMOVE:       });
+// REMOVE:     } else {
+// REMOVE:       res.json({ success: false, error: 'No IP info returned', data });
+// REMOVE:     }
+// REMOVE:   } catch (err) {
+// REMOVE:     res.json({ success: false, error: err.message });
+// REMOVE:   }
+// REMOVE: });
 
 // --- PROFILE TABLE SETUP ---
-db.run(`CREATE TABLE IF NOT EXISTS profiles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  platform TEXT,
-  url TEXT,
-  name TEXT,
-  groupName TEXT,
-  username TEXT,
-  password TEXT,
-  twofa TEXT,
-  cookie TEXT,
-  notes TEXT
-)`);
+// REMOVE: const db = new sqlite3.Database('./proxies.db', (err) => {
+// REMOVE:   if (err) return console.error('DB open error:', err.message);
+// REMOVE:   console.log('Connected to SQLite database.');
+// REMOVE: });
+
+// REMOVE: db.run(`CREATE TABLE IF NOT EXISTS proxies (
+// REMOVE:   id INTEGER PRIMARY KEY AUTOINCREMENT,
+// REMOVE:   type TEXT,
+// REMOVE:   tag TEXT,
+// REMOVE:   hostPort TEXT,
+// REMOVE:   ip TEXT,
+// REMOVE:   location TEXT,
+// REMOVE:   profiles INTEGER,
+// REMOVE:   binding TEXT,
+// REMOVE:   notes TEXT
+// REMOVE: )`);
 
 // --- PROFILE API ENDPOINTS ---
 // Get all profiles
